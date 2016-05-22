@@ -74,7 +74,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 
 #include "RaspiPreview.h"
-
+#include "RaspiCamControl.h"
 #include <semaphore.h>
 
 // Standard port setting for the camera component
@@ -85,7 +85,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 // Stills format information
 // 0 implies variable
-#define STILLS_FRAME_RATE_NUM 0
+#define STILLS_FRAME_RATE_NUM 1
 #define STILLS_FRAME_RATE_DEN 1
 
 /// Video render needs at least 2 buffers.
@@ -222,6 +222,8 @@ static struct
       {"Capture on signal",      FRAME_NEXT_SIGNAL},
 };
 
+RASPICAM_CAMERA_PARAMETERS	CameraParameters;
+
 static int next_frame_description_size = sizeof(next_frame_description) / sizeof(next_frame_description[0]);
 
 static void set_sensor_defaults(RASPISTILL_STATE *state)
@@ -230,8 +232,8 @@ static void set_sensor_defaults(RASPISTILL_STATE *state)
    MMAL_STATUS_T status;
 
    // Default to the OV5647 setup
-   state->width = 2592;
-   state->height = 1944;
+   state->width = 1280;
+   state->height = 720;
    strncpy(state->camera_name, "OV5647", MMAL_PARAMETER_CAMERA_INFO_MAX_STR_LEN);
 
    // Try to get the camera name and maximum supported resolution
@@ -251,8 +253,8 @@ static void set_sensor_defaults(RASPISTILL_STATE *state)
          if (status == MMAL_SUCCESS && param.num_cameras > 0)
          {
             // Take the parameters from the first camera listed.
-            state->width = param.cameras[0].max_width;
-            state->height = param.cameras[0].max_height;
+            state->width = 1280;
+            state->height = 720;
             strncpy(state->camera_name,  param.cameras[0].camera_name, MMAL_PARAMETER_CAMERA_INFO_MAX_STR_LEN);
             state->camera_name[MMAL_PARAMETER_CAMERA_INFO_MAX_STR_LEN-1] = 0;
          }
@@ -449,7 +451,31 @@ static void camera_control_callback(MMAL_PORT_T *port, MMAL_BUFFER_HEADER_T *buf
 
 static void camera_opencv_callback(MMAL_PORT_T *port, MMAL_BUFFER_HEADER_T *buffer)
 {
-  printf("OpenCV Callback called\n");
+     printf("OpenCV Callback called\n");
+
+      if (buffer->flags & (MMAL_BUFFER_HEADER_FLAG_FRAME_END | MMAL_BUFFER_HEADER_FLAG_TRANSMISSION_FAILED))
+      {
+//	 printf("Start it\n");
+      }
+
+   // release buffer back to the pool
+   mmal_buffer_header_release(buffer);
+
+   // and send one back to the port (if still open)
+   if (port->is_enabled)
+   {
+      MMAL_STATUS_T status = MMAL_SUCCESS;
+      MMAL_BUFFER_HEADER_T *new_buffer;
+
+      new_buffer = mmal_queue_get((MMAL_QUEUE_T*)port->userdata);
+
+      if (new_buffer)
+      {
+         status = mmal_port_send_buffer(port, new_buffer);
+      }
+      if (!new_buffer || status != MMAL_SUCCESS)
+         vcos_log_error("Unable to return a buffer to the encoder port");
+   }
 }
 /**
  *  buffer header callback function for encoder
@@ -613,12 +639,12 @@ static MMAL_STATUS_T create_camera_component(RASPISTILL_STATE *state)
          .max_stills_w = state->width,
          .max_stills_h = state->height,
          .stills_yuv422 = 0,
-         .one_shot_stills = 1,
+         .one_shot_stills = 0,
          .max_preview_video_w = state->preview_parameters.previewWindow.width,
          .max_preview_video_h = state->preview_parameters.previewWindow.height,
          .num_preview_video_frames = 3,
          .stills_capture_circular_buffer_height = 0,
-         .fast_preview_resume = 1,
+         .fast_preview_resume = 0,
          .use_stc_timestamp = MMAL_PARAM_TIMESTAMP_MODE_RESET_STC
       };
 
@@ -673,8 +699,15 @@ static MMAL_STATUS_T create_camera_component(RASPISTILL_STATE *state)
 
    // Set the same format on the video  port (which we don't use here)
 
-   //mmal_format_full_copy(video_port->format, format);
+   mmal_format_full_copy(video_port->format, format);
     format=video_port->format;
+      format->encoding = MMAL_ENCODING_I420;
+      format->encoding_variant = MMAL_ENCODING_I420;
+      format->es->video.frame_rate.num = 30;
+      format->es->video.frame_rate.den = 1;
+   video_port->buffer_num = 4;
+   video_port->buffer_size = format->es->video.width * format->es->video.height  * 3 / 2;
+    /*format=video_port->format;
       format->encoding = MMAL_ENCODING_I420;
       format->encoding_variant = MMAL_ENCODING_I420;
  format->es->video.width = VCOS_ALIGN_UP(state->width, 32);
@@ -683,11 +716,11 @@ static MMAL_STATUS_T create_camera_component(RASPISTILL_STATE *state)
    format->es->video.crop.y = 0;
    format->es->video.crop.width = state->width;
    format->es->video.crop.height = state->height;
-   format->es->video.frame_rate.num = 30;
-   format->es->video.frame_rate.den = 1;
    video_port->buffer_num = 3;
    video_port->buffer_size = format->es->video.width * format->es->video.height  * 3 / 2;
-
+      format->es->video.frame_rate.num = PREVIEW_FRAME_RATE_NUM;
+      format->es->video.frame_rate.den = PREVIEW_FRAME_RATE_DEN;
+*/
 
    status = mmal_port_format_commit(video_port);
 
@@ -714,6 +747,7 @@ static MMAL_STATUS_T create_camera_component(RASPISTILL_STATE *state)
    format->es->video.frame_rate.num = STILLS_FRAME_RATE_NUM;
    format->es->video.frame_rate.den = STILLS_FRAME_RATE_DEN;
 
+    printf("Video foram %d x %d \n", format->es->video.width, format->es->video.height);
 
    status = mmal_port_format_commit(still_port);
 
@@ -728,12 +762,21 @@ static MMAL_STATUS_T create_camera_component(RASPISTILL_STATE *state)
       still_port->buffer_num = VIDEO_OUTPUT_BUFFERS_NUM;
 
    state->camera_component = camera;
-
+   printf("Create opencv pool with %d buffer of size %d\n", video_port->buffer_num, video_port->buffer_size);
     MMAL_POOL_T * pool = mmal_port_pool_create(video_port, video_port->buffer_num , video_port->buffer_size );
 
    if (!pool)
    {
       vcos_log_error("Failed to create buffer header pool for encoder output port %s", video_port->name);
+   }
+
+   /* Enable component */
+   status = mmal_component_enable(camera);
+
+   if (status != MMAL_SUCCESS)
+   {
+      vcos_log_error("camera component couldn't be enabled");
+      goto error;
    }
 
 
@@ -745,14 +788,6 @@ static MMAL_STATUS_T create_camera_component(RASPISTILL_STATE *state)
    if (status != MMAL_SUCCESS)
    {
       vcos_log_error("camera component couldn't enable opencv");
-      goto error;
-   }
-   /* Enable component */
-   status = mmal_component_enable(camera);
-
-   if (status != MMAL_SUCCESS)
-   {
-      vcos_log_error("camera component couldn't be enabled");
       goto error;
    }
    /* Create pool of buffer headers for the output port to consume */
@@ -770,13 +805,11 @@ static MMAL_STATUS_T create_camera_component(RASPISTILL_STATE *state)
 
                   if (mmal_port_send_buffer(video_port, buffer)!= MMAL_SUCCESS)
                      vcos_log_error("Unable to send a buffer to camera output port (%d)", q);
+ printf("Sent buffer %d to video port\n",q);
                }
-
-
-   if (mmal_port_parameter_set_boolean(video_port, MMAL_PARAMETER_CAPTURE, 1) != MMAL_SUCCESS) {
-        printf("%s: Failed to start capture\n", __func__);
-    }
-
+    raspicamcontrol_set_defaults(&CameraParameters);
+    raspicamcontrol_set_all_parameters(camera, &CameraParameters);
+                  video_port->userdata =(void*) pool->queue;
 
    if (state->verbose)
       fprintf(stderr, "Camera component done\n");
@@ -1443,6 +1476,14 @@ int main(int argc, const char **argv)
             vcos_log_error("Failed to setup encoder output");
             goto error;
          }
+if(1){
+printf("Start capture of video port...\n");
+   if (mmal_port_parameter_set_boolean(camera_video_port, MMAL_PARAMETER_CAPTURE, 1) != MMAL_SUCCESS) {
+        printf("%s: Failed to start capture\n", __func__);
+    }
+printf("Start capture of video port... OK\n");
+}
+
 
          if (state.demoMode)
          {

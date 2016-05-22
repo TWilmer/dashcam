@@ -15,7 +15,7 @@ include_directories(/opt/vc/src/hello_pi/libs/vgfont)
 link_directories(/opt/vc/lib)
 link_directories(/opt/vc/src/hello_pi/libs/vgfont)
 
-add_executable(dashcam dashcam.c RaspiPreview.c )
+add_executable(dashcam dashcam.c RaspiPreview.c RaspiCamControl.c)
 
 find_package( OpenCV REQUIRED )
 
