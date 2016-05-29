@@ -791,7 +791,7 @@ format->es->video.width = VCOS_ALIGN_UP(state->width, 32);
 
 
 
- mmal_port_parameter_set_int32(camera->output[0], MMAL_PARAMETER_ROTATION, 180);
+   mmal_port_parameter_set_int32(camera->output[0], MMAL_PARAMETER_ROTATION, 180);
    mmal_port_parameter_set_int32(camera->output[1], MMAL_PARAMETER_ROTATION, 180);
    mmal_port_parameter_set_int32(camera->output[2], MMAL_PARAMETER_ROTATION, 180);
 
