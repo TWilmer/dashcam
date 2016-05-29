@@ -29,6 +29,10 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #ifndef RASPICAMCONTROL_H_
 #define RASPICAMCONTROL_H_
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /* Various parameters
  *
  * Exposure Mode
@@ -160,6 +164,7 @@ typedef struct
 } RASPICAM_CAMERA_PARAMETERS;
 
 
+
 void raspicamcontrol_check_configuration(int min_gpu_mem);
 
 int raspicamcontrol_parse_cmdline(RASPICAM_CAMERA_PARAMETERS *params, const char *arg1, const char *arg2);
@@ -212,6 +217,10 @@ MMAL_PARAM_EXPOSUREMODE_T raspicamcontrol_get_exposure_mode(MMAL_COMPONENT_T *ca
 MMAL_PARAM_AWBMODE_T raspicamcontrol_get_awb_mode(MMAL_COMPONENT_T *camera);
 MMAL_PARAM_IMAGEFX_T raspicamcontrol_get_imageFX(MMAL_COMPONENT_T *camera);
 MMAL_PARAM_COLOURFX_T raspicamcontrol_get_colourFX(MMAL_COMPONENT_T *camera);
+
+#ifdef __cplusplus
+}
+#endif
 
 
 #endif /* RASPICAMCONTROL_H_ */
