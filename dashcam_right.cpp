@@ -47,7 +47,6 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 // We use some GNU extensions (asprintf, basename)
-#define _GNU_SOURCE
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -119,7 +118,7 @@ typedef struct
    char camera_name[MMAL_PARAMETER_CAMERA_INFO_MAX_STR_LEN]; // Name of the camera sensor
    int quality;                        /// JPEG quality setting (1-100)
    int wantRAW;                        /// Flag for whether the JPEG metadata also contains the RAW bayer image
-   char *filename;                     /// filename of output file
+   const char *filename;                     /// filename of output file
    char *linkname;                     /// filename of output file
    int frameStart;                     /// First number of frame output counter
    int verbose;                        /// !0 if want detailed run information
@@ -196,7 +195,7 @@ static void store_exif_tag(RASPISTILL_STATE *state, const char *exif_tag);
 
 static struct
 {
-   char *format;
+   const char *format;
    MMAL_FOURCC_T encoding;
 } encoding_xref[] =
 {
@@ -211,7 +210,7 @@ static int encoding_xref_size = sizeof(encoding_xref) / sizeof(encoding_xref[0])
 
 static struct
 {
-   char *description;
+   const char *description;
    int nextFrameMethod;
 } next_frame_description[] =
 {
@@ -561,6 +560,11 @@ static MMAL_STATUS_T create_camera_component(RASPISTILL_STATE *state)
    MMAL_ES_FORMAT_T *format;
    MMAL_PORT_T *preview_port = NULL, *video_port = NULL, *still_port = NULL;
    MMAL_STATUS_T status;
+   MMAL_POOL_T * pool=0;
+   int  num =0;
+   int q=0;;
+   MMAL_PARAMETER_INT32_T camera_num =
+      {{MMAL_PARAMETER_CAMERA_NUM, sizeof(camera_num)}, state->cameraNum};
 
    /* Create the component */
    status = mmal_component_create(MMAL_COMPONENT_DEFAULT_CAMERA, &camera);
@@ -578,8 +582,6 @@ static MMAL_STATUS_T create_camera_component(RASPISTILL_STATE *state)
       goto error;
    }
 
-   MMAL_PARAMETER_INT32_T camera_num =
-      {{MMAL_PARAMETER_CAMERA_NUM, sizeof(camera_num)}, state->cameraNum};
 
    status = mmal_port_parameter_set(camera->control, &camera_num.hdr);
 
@@ -764,7 +766,7 @@ static MMAL_STATUS_T create_camera_component(RASPISTILL_STATE *state)
 
    state->camera_component = camera;
    printf("Create opencv pool with %d buffer of size %d\n", video_port->buffer_num, video_port->buffer_size);
-    MMAL_POOL_T * pool = mmal_port_pool_create(video_port, video_port->buffer_num , video_port->buffer_size );
+   pool = mmal_port_pool_create(video_port, video_port->buffer_num , video_port->buffer_size );
 
    if (!pool)
    {
@@ -793,8 +795,7 @@ static MMAL_STATUS_T create_camera_component(RASPISTILL_STATE *state)
    }
    /* Create pool of buffer headers for the output port to consume */
   // Send all the buffers to the camera output port
-   int  num = mmal_queue_length(pool->queue);
-   int q;
+   num = mmal_queue_length(pool->queue);
    printf("opencv queue length %d\n", num);
 
    for (q=0;q<num;q++)
@@ -810,7 +811,7 @@ static MMAL_STATUS_T create_camera_component(RASPISTILL_STATE *state)
                }
     raspicamcontrol_set_defaults(&CameraParameters);
     raspicamcontrol_set_all_parameters(camera, &CameraParameters);
-                  video_port->userdata =(void*) pool->queue;
+                  video_port->userdata =(MMAL_PORT_USERDATA_T*) pool->queue;
 
    if (state->verbose)
       fprintf(stderr, "Camera component done\n");
@@ -1093,34 +1094,6 @@ static MMAL_STATUS_T connect_ports(MMAL_PORT_T *output_port, MMAL_PORT_T *input_
 }
 
 
-/**
- * Allocates and generates a filename based on the
- * user-supplied pattern and the frame number.
- * On successful return, finalName and tempName point to malloc()ed strings
- * which must be freed externally.  (On failure, returns nulls that
- * don't need free()ing.)
- *
- * @param finalName pointer receives an
- * @param pattern sprintf pattern with %d to be replaced by frame
- * @param frame for timelapse, the frame number
- * @return Returns a MMAL_STATUS_T giving result of operation
-*/
-
-MMAL_STATUS_T create_filenames(char** finalName, char** tempName, char * pattern, int frame)
-{
-   *finalName = NULL;
-   *tempName = NULL;
-   if (0 > asprintf(finalName, pattern, frame) ||
-       0 > asprintf(tempName, "%s~", *finalName))
-   {
-      if (*finalName != NULL)
-      {
-         free(*finalName);
-      }
-      return MMAL_ENOMEM;    // It may be some other error, but it is not worth getting it right
-   }
-   return MMAL_SUCCESS;
-}
 
 /**
  * Checks if specified port is valid and enabled, then disables it
@@ -1193,24 +1166,7 @@ static void rename_file(RASPISTILL_STATE *state, FILE *output_file,
       vcos_log_error("Could not rename temp file to: %s; %s",
             final_filename,strerror(errno));
    }
-   if (state->linkname)
-   {
-      char *use_link;
-      char *final_link;
-      status = create_filenames(&final_link, &use_link, state->linkname, frame);
 
-      // Create hard link if possible, symlink otherwise
-      if (status != MMAL_SUCCESS
-            || (0 != link(final_filename, use_link)
-               &&  0 != symlink(final_filename, use_link))
-            || 0 != rename(use_link, final_link))
-      {
-         vcos_log_error("Could not link as filename: %s; %s",
-               state->linkname,strerror(errno));
-      }
-      if (use_link) free(use_link);
-      if (final_link) free(final_link);
-   }
 }
 
 /**
@@ -1229,7 +1185,7 @@ int main(int argc, const char **argv)
    MMAL_PORT_T *preview_input_port = NULL;
    MMAL_PORT_T *encoder_input_port = NULL;
    MMAL_PORT_T *encoder_output_port = NULL;
-   int num, q;
+
 
    bcm_host_init();
 
