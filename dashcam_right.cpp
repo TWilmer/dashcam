@@ -77,6 +77,17 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "RaspiCamControl.h"
 #include <semaphore.h>
 
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <arpa/inet.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <netdb.h>
+
+int portno=3333;
+
+
 // Standard port setting for the camera component
 #define MMAL_CAMERA_PREVIEW_PORT 0
 #define MMAL_CAMERA_VIDEO_PORT 1
@@ -225,6 +236,11 @@ static struct
 RASPICAM_CAMERA_PARAMETERS	CameraParameters;
 
 static int next_frame_description_size = sizeof(next_frame_description) / sizeof(next_frame_description[0]);
+
+static void error(char *msg) {
+    perror(msg);
+    exit(0);
+}
 
 static void set_sensor_defaults(RASPISTILL_STATE *state)
 {
@@ -485,6 +501,7 @@ static void camera_opencv_callback(MMAL_PORT_T *port, MMAL_BUFFER_HEADER_T *buff
  * @param port Pointer to port from which callback originated
  * @param buffer mmal buffer header pointer
  */
+int socketFD=0;
 static void encoder_buffer_callback(MMAL_PORT_T *port, MMAL_BUFFER_HEADER_T *buffer)
 {
   printf("Buffer Callback called\n");
@@ -496,23 +513,38 @@ static void encoder_buffer_callback(MMAL_PORT_T *port, MMAL_BUFFER_HEADER_T *buf
 
    if (pData)
    {
-      int bytes_written = buffer->length;
+      if(socketFD==0)
+      {
+  struct hostent *server;
+struct sockaddr_in serv_addr;
+	     if ( ( socketFD = socket(AF_INET, SOCK_STREAM, 0) ) < 0 )
+               error( const_cast<char *>( "ERROR opening socket") );
 
-      if (buffer->length && pData->file_handle)
+             if ( ( server = gethostbyname( "192.168.3.1"  ) ) == NULL ) 
+                error( const_cast<char *>("ERROR, no such host\n") );
+ bzero( (char *) &serv_addr, sizeof(serv_addr));
+    serv_addr.sin_family = AF_INET;
+    bcopy( (char *)server->h_addr, (char *)&serv_addr.sin_addr.s_addr, server->h_length);
+    serv_addr.sin_port = htons(portno);
+    if ( connect(socketFD,(struct sockaddr *)&serv_addr,sizeof(serv_addr)) < 0) 
+        error( const_cast<char *>( "ERROR connecting") );
+
+      }
+
+      if (buffer->length )
       {
          mmal_buffer_header_mem_lock(buffer);
+      	int len=write( socketFD, buffer->data, buffer->length);
+		if(len!=buffer->length)
+ 	{
+   		printf("Could not write enough data\n");
+         complete = 1;
+        }
 
-         bytes_written = fwrite(buffer->data, 1, buffer->length, pData->file_handle);
 
          mmal_buffer_header_mem_unlock(buffer);
       }
 
-      // We need to check we wrote what we wanted - it's possible we have run out of storage.
-      if (bytes_written != buffer->length)
-      {
-         vcos_log_error("Unable to write buffer to file - aborting");
-         complete = 1;
-      }
 
       // Now flag if we have completed
       if (buffer->flags & (MMAL_BUFFER_HEADER_FLAG_FRAME_END | MMAL_BUFFER_HEADER_FLAG_TRANSMISSION_FAILED))
@@ -542,8 +574,11 @@ static void encoder_buffer_callback(MMAL_PORT_T *port, MMAL_BUFFER_HEADER_T *buf
          vcos_log_error("Unable to return a buffer to the encoder port");
    }
 
-   if (complete)
+   if (complete) {
+      close(socketFD);
+      socketFD=0;
       vcos_semaphore_post(&(pData->complete_semaphore));
+   }
 }
 
 /**
@@ -1177,6 +1212,8 @@ int main(int argc, const char **argv)
    // Our main data storage vessel..
    RASPISTILL_STATE state;
    int exit_code = EX_OK;
+   int num, q;
+
 
    MMAL_STATUS_T status = MMAL_SUCCESS;
    MMAL_PORT_T *camera_preview_port = NULL;
