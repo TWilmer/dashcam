@@ -225,12 +225,12 @@ static struct {
   const char *description;
   int nextFrameMethod;
 } next_frame_description[] = {
-      {"Single capture", FRAME_NEXT_SINGLE},
-      {"Capture on timelapse", FRAME_NEXT_TIMELAPSE},
-      {"Capture on keypress", FRAME_NEXT_KEYPRESS},
-      {"Run forever", FRAME_NEXT_FOREVER},
-      {"Capture on GPIO", FRAME_NEXT_GPIO},
-      {"Capture on signal", FRAME_NEXT_SIGNAL},
+    {"Single capture", FRAME_NEXT_SINGLE},
+    {"Capture on timelapse", FRAME_NEXT_TIMELAPSE},
+    {"Capture on keypress", FRAME_NEXT_KEYPRESS},
+    {"Run forever", FRAME_NEXT_FOREVER},
+    {"Capture on GPIO", FRAME_NEXT_GPIO},
+    {"Capture on signal", FRAME_NEXT_SIGNAL},
 };
 
 RASPICAM_CAMERA_PARAMETERS CameraParameters;
@@ -1277,8 +1277,10 @@ int main(int argc, const char **argv) {
           input = digitalRead(21);
         } while (input == 0);
 
-        if(mmal_port_parameter_set_uint32(state.camera_component->control, MMAL_PARAMETER_SHUTTER_SPEED, 0) != MMAL_SUCCESS)
-                     vcos_log_error("Unable to set shutter speed");
+        if (mmal_port_parameter_set_uint32(state.camera_component->control,
+                                           MMAL_PARAMETER_SHUTTER_SPEED,
+                                           0) != MMAL_SUCCESS)
+          vcos_log_error("Unable to set shutter speed");
 
         encoder_output_port->userdata =
             (struct MMAL_PORT_USERDATA_T *)&callback_data;
