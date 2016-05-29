@@ -21,8 +21,8 @@ add_executable(dashcamR dashcam_right.cpp RaspiPreview.c RaspiCamControl.c)
 
 find_package( OpenCV REQUIRED )
 
-target_link_libraries(dashcam mmal_core mmal_util mmal_vc_client vcos bcm_host  ${OpenCV_LIBS}  openmaxil EGL pthread rt m)
+target_link_libraries(dashcam mmal_core mmal_util mmal_vc_client vcos bcm_host  ${OpenCV_LIBS}  openmaxil EGL pthread rt m wiringPi)
 target_link_libraries(dashcamR mmal_core mmal_util mmal_vc_client vcos bcm_host  ${OpenCV_LIBS}  openmaxil EGL pthread rt m wiringPi)
 
 add_executable(dashgrab dashgrab.cpp)
-target_link_libraries(dashgrab mmal_core mmal_util mmal_vc_client vcos bcm_host  ${OpenCV_LIBS}  openmaxil EGL pthread rt m)
+target_link_libraries(dashgrab mmal_core mmal_util mmal_vc_client vcos bcm_host  ${OpenCV_LIBS}  openmaxil EGL pthread rt m wiringPi)

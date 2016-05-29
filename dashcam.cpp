@@ -641,7 +641,7 @@ static MMAL_STATUS_T create_camera_component(RASPISTILL_STATE *state)
          .max_stills_w = state->width,
          .max_stills_h = state->height,
          .stills_yuv422 = 0,
-         .one_shot_stills = 0,
+         .one_shot_stills = 1,
          .max_preview_video_w = state->preview_parameters.previewWindow.width,
          .max_preview_video_h = state->preview_parameters.previewWindow.height,
          .num_preview_video_frames = 3,
