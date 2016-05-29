@@ -58,6 +58,10 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <errno.h>
 #include <sysexits.h>
 #include <wiringPi.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+
 
 #define VERSION_STRING "v1.3.8"
 
@@ -400,7 +404,7 @@ static void display_valid_parameters(char *app_name) {
  */
 static void camera_control_callback(MMAL_PORT_T *port,
                                     MMAL_BUFFER_HEADER_T *buffer) {
-  printf("Control Callback called\n");
+  //printf("Control Callback called\n");
   if (buffer->cmd == MMAL_EVENT_PARAMETER_CHANGED) {
     MMAL_EVENT_PARAMETER_CHANGED_T *param =
         (MMAL_EVENT_PARAMETER_CHANGED_T *)buffer->data;
@@ -429,7 +433,7 @@ static void camera_control_callback(MMAL_PORT_T *port,
 
 static void camera_opencv_callback(MMAL_PORT_T *port,
                                    MMAL_BUFFER_HEADER_T *buffer) {
-  printf("OpenCV Callback called\n");
+  //printf("OpenCV Callback called\n");
 
   if (buffer->flags & (MMAL_BUFFER_HEADER_FLAG_FRAME_END |
                        MMAL_BUFFER_HEADER_FLAG_TRANSMISSION_FAILED)) {
@@ -454,7 +458,7 @@ static void camera_opencv_callback(MMAL_PORT_T *port,
   }
 }
 
-int outputFileFD;
+int outputFileFD=0;
 /**
  *  buffer header callback function for encoder
  *
@@ -465,7 +469,6 @@ int outputFileFD;
  */
 static void encoder_buffer_callback(MMAL_PORT_T *port,
                                     MMAL_BUFFER_HEADER_T *buffer) {
-  printf("Buffer Callback called\n");
   int complete = 0;
 
   // We pass our file handle and other stuff in via the userdata field.
@@ -473,12 +476,15 @@ static void encoder_buffer_callback(MMAL_PORT_T *port,
   PORT_USERDATA *pData = (PORT_USERDATA *)port->userdata;
 
   if (pData) {
-    if(outputFileFD==0)
-      outputFileFD=open("/var/www/html/left.jpg",  O_RDWR | O_CREAT);
+    if(outputFileFD==-1){
+       outputFileFD=open("/var/www/html/left.jpg",  O_RDWR | O_CREAT);
+       fchmod(outputFileFD, S_IROTH);
+    }
+
       
 
 
-    if (buffer->length && pData->file_handle) {
+    if (buffer->length && outputFileFD>0) {
       mmal_buffer_header_mem_lock(buffer);
       int lenWritten = write(outputFileFD, buffer->data,  buffer->length);
       if(lenWritten!= buffer->length)
@@ -490,12 +496,6 @@ static void encoder_buffer_callback(MMAL_PORT_T *port,
       mmal_buffer_header_mem_unlock(buffer);
     }
 
-    // We need to check we wrote what we wanted - it's possible we have run out
-    // of storage.
-    if (bytes_written != buffer->length) {
-      vcos_log_error("Unable to write buffer to file - aborting");
-      complete = 1;
-    }
 
     // Now flag if we have completed
     if (buffer->flags & (MMAL_BUFFER_HEADER_FLAG_FRAME_END |
@@ -525,6 +525,7 @@ static void encoder_buffer_callback(MMAL_PORT_T *port,
   if (complete) {
     vcos_semaphore_post(&(pData->complete_semaphore));
     close(outputFileFD);
+    outputFileFD=0;
   }
 }
 
@@ -787,6 +788,13 @@ format->es->video.width = VCOS_ALIGN_UP(state->width, 32);
 
   if (state->verbose)
     fprintf(stderr, "Camera component done\n");
+
+
+
+ mmal_port_parameter_set_int32(camera->output[0], MMAL_PARAMETER_ROTATION, 180);
+   mmal_port_parameter_set_int32(camera->output[1], MMAL_PARAMETER_ROTATION, 180);
+   mmal_port_parameter_set_int32(camera->output[2], MMAL_PARAMETER_ROTATION, 180);
+
 
   return status;
 
@@ -1259,6 +1267,8 @@ int main(int argc, const char **argv) {
   // Our main data storage vessel..
   RASPISTILL_STATE state;
   int exit_code = EX_OK;
+  int num;
+  int q;
 
   MMAL_STATUS_T status = MMAL_SUCCESS;
   MMAL_PORT_T *camera_preview_port = NULL;
@@ -1378,10 +1388,11 @@ int main(int argc, const char **argv) {
         printf("Start capture of video port... OK\n");
       }
 
-      pinMode(21, INPUT);
+      pinMode(21, OUTPUT); // on the left side we control this pin, we read the value back in this program to have the same effect as on the right pi
       int input = 0;
       int frame = 0;
       while (1) {
+        outputFileFD=-1;
         do {
           input = digitalRead(21);
         } while (input == 0);
